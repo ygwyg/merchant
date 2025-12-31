@@ -1,12 +1,6 @@
 {
-  // ============================================================
-  // MERCHANT ADMIN - Static Assets Worker
-  // ============================================================
-
   "name": "merchant-admin",
-  "account_id": "3f3fc3f3d329d967573c0e8acc8525e1",
   "compatibility_date": "2025-12-01",
-
   "assets": {
     "directory": "./dist"
   }

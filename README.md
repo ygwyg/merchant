@@ -158,7 +158,37 @@ POST /v1/setup/stripe
 {"stripe_secret_key": "sk_...", "stripe_webhook_secret": "whsec_..."}
 ```
 
-## Webhooks
+### Outbound Webhooks (admin)
+
+```bash
+# List webhooks
+GET /v1/webhooks
+
+# Create webhook
+POST /v1/webhooks
+{"url": "https://your-server.com/webhook", "events": ["order.created", "order.shipped"]}
+
+# Get webhook (includes recent deliveries)
+GET /v1/webhooks/{id}
+
+# Update webhook
+PATCH /v1/webhooks/{id}
+{"events": ["*"], "status": "paused"}
+
+# Rotate secret
+POST /v1/webhooks/{id}/rotate-secret
+
+# Delete webhook
+DELETE /v1/webhooks/{id}
+```
+
+**Events:** `order.created`, `order.updated`, `order.shipped`, `order.refunded`, `inventory.low`
+
+**Wildcards:** `order.*` or `*` for all events
+
+Payloads are signed with HMAC-SHA256. Verify with the `X-Merchant-Signature` header.
+
+## Stripe Webhooks
 
 Set your Stripe webhook endpoint to `https://your-domain/v1/webhooks/stripe`
 
@@ -170,19 +200,29 @@ For local development:
 stripe listen --forward-to localhost:8787/v1/webhooks/stripe
 ```
 
+## Rate Limiting
+
+All endpoints return rate limit headers:
+- `X-RateLimit-Limit` — Requests allowed per window
+- `X-RateLimit-Remaining` — Requests remaining
+- `X-RateLimit-Reset` — Unix timestamp when window resets
+
+Limits are configurable in `src/config/rate-limits.ts`.
+
 ## Admin Dashboard
 
 ```bash
-cd admin && npm run dev
+cd admin && npm install && npm run dev
 ```
 
 Connect with your API URL and admin key (`sk_...`).
 
 Features:
-- View and search orders
-- Manage inventory levels
-- View products and variants
-- Upload variant images
+- **Orders** — Search, filter by status, update tracking, one-click refunds
+- **Inventory** — View stock levels, quick adjustments (+10, +50, etc.)
+- **Products** — Create products, add/edit variants, upload images
+- **Webhooks** — Create endpoints, view delivery history, rotate secrets
+- Light/dark mode, collapsible sidebar
 
 ## Architecture
 

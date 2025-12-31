@@ -1,52 +1,29 @@
 {
-  // ============================================================
-  // MERCHANT - Cloudflare Workers
-  // ============================================================
-
   "name": "merchant-api",
-  "account_id": "3f3fc3f3d329d967573c0e8acc8525e1",
   "main": "src/index.ts",
   "compatibility_date": "2025-12-01",
 
-  // D1 Database
   "d1_databases": [
     {
-      "binding": "DB",
-      "database_name": "merchant-db",
-      "database_id": "0a4cea75-6c84-415b-9a47-40dc158a56a3"
+      "binding": "DB"
     }
   ],
 
-  // R2 - Image storage
   "r2_buckets": [
     {
-      "binding": "IMAGES",
-      "bucket_name": "merchant-images"
+      "binding": "IMAGES"
     }
   ],
 
   "vars": {
-    "IMAGES_URL": "" // Set after deploy to your R2 public URL
+    "IMAGES_URL": ""
   },
 
-  // Cron for expired cart cleanup (every 15 minutes)
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
 
-  // Local development
   "dev": {
     "port": 8787
   }
-
-  // ============================================================
-  // OPTIONAL: Postgres + Hyperdrive (for scale)
-  // ============================================================
-  // "hyperdrive": [
-  //   {
-  //     "binding": "HYPERDRIVE",
-  //     "id": ""
-  //   }
-  // ]
 }
-

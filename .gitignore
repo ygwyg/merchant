@@ -14,6 +14,8 @@ admin/dist/
 .env
 .env.local
 .dev.vars
+wrangler.local.jsonc
+admin/wrangler.local.jsonc
 
 # IDE
 .idea/
