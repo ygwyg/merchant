@@ -11,22 +11,25 @@ A lightweight, API-first backend for products, inventory, checkout, and ordersâ€
 git clone https://github.com/ygwyg/merchant
 cd merchant && npm install
 
-# 2. Initialize (creates store + API keys)
+# 2. Create D1 database
+npx wrangler d1 create merchant-db --binding "DB"
+
+# 3. Initialize (creates store + API keys)
 npx tsx scripts/init.ts
 
-# 3. Start the API
+# 4. Start the API
 npm run dev
 
-# 4. Seed demo data (optional)
+# 5. Seed demo data (optional)
 npx tsx scripts/seed.ts http://localhost:8787 sk_your_admin_key
 
-# 5. Connect Stripe
+# 6. Connect Stripe
 curl -X POST http://localhost:8787/v1/setup/stripe \
   -H "Authorization: Bearer sk_your_admin_key" \
   -H "Content-Type: application/json" \
   -d '{"stripe_secret_key":"sk_test_..."}'
 
-# 6. Admin dashboard
+# 7. Admin dashboard
 cd admin && npm install && npm run dev
 ```
 

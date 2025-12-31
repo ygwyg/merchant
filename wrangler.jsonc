@@ -3,11 +3,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-12-01",
 
-  "d1_databases": [
-    {
-      "binding": "DB"
-    }
-  ],
+  "d1_databases": [],
 
   "r2_buckets": [
     {
