@@ -228,17 +228,46 @@ checkout.post('/:cartId/checkout', async (c) => {
 
   const db = getDb(c.env);
 
+  // Atomically update cart status from 'open' to 'checked_out' to prevent concurrent checkout race condition
+  // This ensures only one checkout request can proceed for a given cart
+  // We'll set stripe_checkout_session_id to NULL initially, then update it after creating the Stripe session
+  const statusUpdateResult = await db.run(
+    `UPDATE carts SET status = 'checked_out', updated_at = ? WHERE id = ? AND store_id = ? AND status = 'open'`,
+    [now(), cartId, store.id]
+  );
+  
+  if (statusUpdateResult.changes === 0) {
+    // Cart not found, wrong store, or already checked out/expired
+    const [cart] = await db.query<any>(
+      `SELECT * FROM carts WHERE id = ? AND store_id = ?`,
+      [cartId, store.id]
+    );
+    if (!cart) throw ApiError.notFound('Cart not found');
+    if (cart.status !== 'open') throw ApiError.conflict('Cart is not open');
+    // If we get here, cart exists and is open but update failed - this shouldn't happen
+    throw ApiError.invalidRequest('Failed to initiate checkout. Please try again.');
+  }
+
+  // Fetch cart data after successful status update
   const [cart] = await db.query<any>(
     `SELECT * FROM carts WHERE id = ? AND store_id = ?`,
     [cartId, store.id]
   );
   if (!cart) throw ApiError.notFound('Cart not found');
-  if (cart.status !== 'open') throw ApiError.conflict('Cart is not open');
 
   const items = await db.query<any>(`SELECT * FROM cart_items WHERE cart_id = ?`, [cartId]);
-  if (items.length === 0) throw ApiError.invalidRequest('Cart is empty');
+  if (items.length === 0) {
+    // Cart is empty - revert status back to 'open' since checkout can't proceed
+    await db.run(`UPDATE carts SET status = 'open', updated_at = ? WHERE id = ?`, [now(), cartId]);
+    throw ApiError.invalidRequest('Cart is empty');
+  }
 
   const subtotalCents = items.reduce((sum, item) => sum + item.unit_price_cents * item.qty, 0);
+
+  // Revert cart status to 'open' if checkout fails (to allow retry)
+  const revertCartStatus = async () => {
+    await db.run(`UPDATE carts SET status = 'open', updated_at = ? WHERE id = ?`, [now(), cartId]);
+  };
 
   // Validate and recalculate discount if present
   let discountAmountCents = 0;
@@ -257,11 +286,12 @@ checkout.post('/:cartId/checkout', async (c) => {
       try {
         await validateDiscount(db, discount, subtotalCents, cart.customer_email);
       } catch (err) {
-        // Discount no longer valid, remove from cart
+        // Discount no longer valid, remove from cart and revert status
         await db.run(
           `UPDATE carts SET discount_code = NULL, discount_id = NULL, discount_amount_cents = 0 WHERE id = ?`,
           [cartId]
         );
+        await revertCartStatus();
         if (err instanceof ApiError) throw err;
         throw ApiError.invalidRequest('Discount is no longer valid');
       }
@@ -284,6 +314,7 @@ checkout.post('/:cartId/checkout', async (c) => {
             `UPDATE carts SET discount_code = NULL, discount_id = NULL, discount_amount_cents = 0 WHERE id = ?`,
             [cartId]
           );
+          await revertCartStatus();
           throw ApiError.invalidRequest('You have already used this discount');
         }
       }
@@ -303,11 +334,12 @@ checkout.post('/:cartId/checkout', async (c) => {
         );
         
         if (result.changes === 0) {
-          // Usage limit reached or discount became invalid - remove from cart
+          // Usage limit reached or discount became invalid - remove from cart and revert status
           await db.run(
             `UPDATE carts SET discount_code = NULL, discount_id = NULL, discount_amount_cents = 0 WHERE id = ?`,
             [cartId]
           );
+          await revertCartStatus();
           throw ApiError.invalidRequest('Discount usage limit reached');
         }
         discountReserved = true;
@@ -324,11 +356,12 @@ checkout.post('/:cartId/checkout', async (c) => {
         );
         
         if (result.changes === 0) {
-          // Discount became invalid - remove from cart
+          // Discount became invalid - remove from cart and revert status
           await db.run(
             `UPDATE carts SET discount_code = NULL, discount_id = NULL, discount_amount_cents = 0 WHERE id = ?`,
             [cartId]
           );
+          await revertCartStatus();
           throw ApiError.invalidRequest('Discount is no longer valid');
         }
       }
@@ -390,10 +423,12 @@ checkout.post('/:cartId/checkout', async (c) => {
     if (err instanceof ApiError) {
       await releaseReservedDiscount();
       await releaseReservedInventory();
+      await revertCartStatus();
       throw err;
     }
     await releaseReservedDiscount();
     await releaseReservedInventory();
+    await revertCartStatus();
     throw err;
   }
 
@@ -415,29 +450,50 @@ checkout.post('/:cartId/checkout', async (c) => {
   // but customer will pay full price (discount won't be applied in Stripe)
   let stripeCouponId: string | null = null;
   if (discount && discountAmountCents > 0) {
-    if (discount.stripe_coupon_id) {
+    // For percentage discounts with a cap, we must create the coupon on-the-fly
+    // because the capped amount depends on the order subtotal. Even if a coupon
+    // exists from before this fix, it was created incorrectly with percent_off.
+    const needsOnTheFlyCoupon = discount.type === 'percentage' && discount.max_discount_cents;
+    
+    if (discount.stripe_coupon_id && !needsOnTheFlyCoupon) {
       stripeCouponId = discount.stripe_coupon_id;
     } else if (store.stripe_secret_key) {
-      // Discount not synced to Stripe - try to sync on the fly
-      // This shouldn't happen if discounts are properly synced, but handle gracefully
-      console.warn(`Discount ${discount.id} not synced to Stripe, attempting sync...`);
+      // Discount not synced to Stripe - create coupon on the fly
+      // This happens for percentage discounts with max_discount_cents cap,
+      // or if discount wasn't synced when created/updated
       try {
         const stripe = new Stripe(store.stripe_secret_key);
-        // Quick sync - create coupon for this checkout
-        // Note: This creates a one-off coupon, not linked to the discount record
-        // Proper fix: ensure discounts are synced when created/updated
-        const coupon = await stripe.coupons.create({
-          ...(discount.type === 'percentage'
-            ? { percent_off: discount.value }
-            : { amount_off: discount.value, currency: 'usd' }),
+        // For percentage discounts with a cap, we must use amount_off with the
+        // calculated capped amount, not percent_off (which Stripe doesn't cap)
+        const couponParams: Stripe.CouponCreateParams = {
           duration: 'once',
           metadata: { merchant_discount_id: discount.id },
-        });
+        };
+        
+        if (discount.type === 'percentage' && discount.max_discount_cents) {
+          // Use amount_off with the already-calculated capped discount amount
+          // discountAmountCents was calculated using calculateDiscount which respects the cap
+          couponParams.amount_off = discountAmountCents;
+          couponParams.currency = 'usd';
+        } else if (discount.type === 'percentage') {
+          // Percentage discount without cap - use percent_off
+          couponParams.percent_off = discount.value;
+        } else {
+          // Fixed amount discount
+          couponParams.amount_off = discount.value;
+          couponParams.currency = 'usd';
+        }
+        
+        const coupon = await stripe.coupons.create(couponParams);
         stripeCouponId = coupon.id;
       } catch (err: any) {
-        // Sync failed - proceed without Stripe discount
-        // Discount will be recorded in order but not applied to charge
-        console.error(`Failed to sync discount to Stripe: ${err.message}`);
+        // Stripe coupon creation failed - release reserved discount usage and fail checkout
+        // This prevents overcharging the customer and consuming discount slots without benefit
+        await releaseReservedDiscount();
+        await releaseReservedInventory();
+        await revertCartStatus();
+        console.error(`Failed to create Stripe coupon for discount: ${err.message}`);
+        throw ApiError.invalidRequest('Failed to apply discount. Please try again or remove the discount and proceed.');
       }
     }
   }
@@ -487,14 +543,16 @@ checkout.post('/:cartId/checkout', async (c) => {
     // Release reserved discount and inventory if Stripe session creation fails
     await releaseReservedDiscount();
     await releaseReservedInventory();
+    await revertCartStatus();
     throw ApiError.invalidRequest('Payment processing error. Please try again.');
   }
 
-  // Update cart with final discount amount
-  // Note: Discount usage was already reserved above, will be committed when order is created via webhook
+  // Update cart with Stripe session ID and final discount amount
+  // Note: Cart status is already 'checked_out' from the atomic update at the start
+  // Discount usage was already reserved above, will be committed when order is created via webhook
   // Set updated_at to track when checkout was initiated (for abandoned checkout detection)
   await db.run(
-    `UPDATE carts SET status = 'checked_out', stripe_checkout_session_id = ?, discount_amount_cents = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE carts SET stripe_checkout_session_id = ?, discount_amount_cents = ?, updated_at = ? WHERE id = ?`,
     [session.id, discountAmountCents, now(), cartId]
   );
 

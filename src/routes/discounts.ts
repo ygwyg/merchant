@@ -134,15 +134,16 @@ async function syncDiscountToStripe(
     };
 
     if (discount.type === 'percentage') {
-      couponParams.percent_off = discount.value;
+      // For percentage discounts with a max_discount_cents cap, we cannot use percent_off
+      // because Stripe doesn't enforce the cap. The actual discount amount depends on
+      // the order subtotal, so we must create the coupon on-the-fly at checkout time.
+      // Return null here - the coupon will be created in checkout.ts with the correct amount.
       if (discount.max_discount_cents) {
-        // Stripe doesn't support max discount directly, but we handle it in validation
-        // Store it in metadata for reference
-        couponParams.metadata = {
-          ...couponParams.metadata,
-          max_discount_cents: String(discount.max_discount_cents),
-        };
+        // Don't create Stripe coupon here - it will be created on-the-fly at checkout
+        // with the correct capped amount based on the actual order subtotal
+        return { couponId: null, promotionCodeId: null };
       }
+      couponParams.percent_off = discount.value;
     } else {
       couponParams.amount_off = discount.value;
       couponParams.currency = 'usd';
