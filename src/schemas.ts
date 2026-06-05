@@ -53,6 +53,22 @@ export const UpdateVariantBody = z.object({
 }).openapi('UpdateVariant');
 
 // ============================================================
+// SHARED REFS
+// ============================================================
+
+export const CategoryRef = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  slug: z.string(),
+}).openapi('CategoryRef');
+
+export const CollectionRef = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  slug: z.string(),
+}).openapi('CollectionRef');
+
+// ============================================================
 // PRODUCT SCHEMAS
 // ============================================================
 
@@ -65,6 +81,8 @@ export const ProductResponse = z.object({
   status: ProductStatus,
   created_at: z.string().datetime(),
   variants: z.array(VariantResponse),
+  categories: z.array(CategoryRef),
+  collections: z.array(CollectionRef),
 }).openapi('Product');
 
 export const ProductListResponse = z.object({
@@ -549,6 +567,251 @@ export const ImageUploadResponse = z.object({
 }).openapi('ImageUpload');
 
 // ============================================================
+// ANALYTICS / FINANCIAL SCHEMAS
+// ============================================================
+
+export const SetCostBody = z.object({
+  cost_cents: z.number().int().min(0).openapi({ example: 1500, description: 'Cost in minor currency units (cents)' }),
+}).openapi('SetCost');
+
+export const CostResponse = z.object({
+  product_id: z.string().uuid(),
+  variant_id: z.string().uuid().nullable(),
+  cost_cents: z.number().int(),
+  currency: z.string(),
+  updated_at: z.string().datetime(),
+}).openapi('Cost');
+
+export const AnalyticsSummary = z.object({
+  total_revenue_cents: z.number().int(),
+  total_cost_cents: z.number().int(),
+  gross_profit_cents: z.number().int(),
+  gross_margin_bps: z.number().int(),
+  total_orders: z.number().int(),
+  total_refunds_cents: z.number().int(),
+  total_discounts_cents: z.number().int(),
+  inventory_value_cents: z.number().int(),
+  unsold_inventory_cents: z.number().int(),
+}).openapi('AnalyticsSummary');
+
+export const ProductProfitability = z.object({
+  product_id: z.string().uuid(),
+  product_title: z.string(),
+  product_status: z.string(),
+  variants_count: z.number().int(),
+  units_sold: z.number().int(),
+  revenue_cents: z.number().int(),
+  cost_cents: z.number().int(),
+  gross_profit_cents: z.number().int(),
+  gross_margin_bps: z.number().int(),
+  refund_cents: z.number().int(),
+  discount_cents: z.number().int(),
+  net_revenue_cents: z.number().int(),
+}).openapi('ProductProfitability');
+
+export const ProductProfitabilityList = z.object({
+  items: z.array(ProductProfitability),
+  totals: z.object({
+    total_revenue_cents: z.number().int(),
+    total_cost_cents: z.number().int(),
+    total_profit_cents: z.number().int(),
+    total_units_sold: z.number().int(),
+  }),
+}).openapi('ProductProfitabilityList');
+
+export const TrendDataPoint = z.object({
+  date: z.string(),
+  revenue_cents: z.number().int(),
+  cost_cents: z.number().int(),
+  profit_cents: z.number().int(),
+  margin_bps: z.number().int(),
+  orders_count: z.number().int(),
+}).openapi('TrendDataPoint');
+
+export const TrendResponse = z.object({
+  items: z.array(TrendDataPoint),
+}).openapi('TrendResponse');
+
+export const InventoryValuationItem = z.object({
+  sku: z.string(),
+  variant_title: z.string().nullable(),
+  product_title: z.string().nullable(),
+  on_hand: z.number().int(),
+  cost_cents: z.number().int(),
+  total_value_cents: z.number().int(),
+  potential_revenue_cents: z.number().int(),
+}).openapi('InventoryValuationItem');
+
+export const InventoryValuationResponse = z.object({
+  items: z.array(InventoryValuationItem),
+  totals: z.object({
+    total_value_cents: z.number().int(),
+    total_potential_revenue_cents: z.number().int(),
+    total_on_hand: z.number().int(),
+  }),
+}).openapi('InventoryValuationResponse');
+
+export const AnalyticsOrderProfitability = z.object({
+  order_id: z.string().uuid(),
+  order_number: z.string(),
+  status: z.string(),
+  customer_email: z.string(),
+  revenue_cents: z.number().int(),
+  cost_cents: z.number().int(),
+  gross_profit_cents: z.number().int(),
+  gross_margin_bps: z.number().int(),
+  discount_cents: z.number().int(),
+  refund_cents: z.number().int(),
+  net_profit_cents: z.number().int(),
+  created_at: z.string().datetime(),
+}).openapi('OrderProfitability');
+
+export const AnalyticsDashboardResponse = z.object({
+  summary: AnalyticsSummary,
+  top_products: z.array(ProductProfitability),
+  bottom_products: z.array(ProductProfitability),
+}).openapi('AnalyticsDashboardResponse');
+
+export const AnalyticsQuery = z.object({
+  days: z.string().optional().openapi({ param: { name: 'days', in: 'query' }, example: '30' }),
+  sort: z.enum(['profit', 'revenue', 'margin', 'units']).optional().openapi({ param: { name: 'sort', in: 'query' } }),
+  order: z.enum(['desc', 'asc']).optional().openapi({ param: { name: 'order', in: 'query' } }),
+});
+
+// ============================================================
+// CATEGORY SCHEMAS
+// ============================================================
+
+export const CategoryStatus = z.enum(['active', 'draft']);
+
+export const CategoryResponse = z.object({
+  id: z.string().uuid(),
+  name: z.string().openapi({ example: 'T-Shirts' }),
+  slug: z.string().openapi({ example: 't-shirts' }),
+  description: z.string().nullable().openapi({ example: 'All our t-shirt products' }),
+  image_url: z.string().nullable(),
+  parent_id: z.string().uuid().nullable(),
+  status: CategoryStatus,
+  sort_order: z.number().int(),
+  product_count: z.number().int(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+}).openapi('Category');
+
+export const CategoryListResponse = z.object({
+  items: z.array(CategoryResponse),
+  pagination: PaginationResponse,
+}).openapi('CategoryList');
+
+export const CreateCategoryBody = z.object({
+  name: z.string().min(1).openapi({ example: 'T-Shirts' }),
+  description: z.string().optional().openapi({ example: 'All our t-shirt products' }),
+  image_url: z.string().url().optional(),
+  parent_id: z.string().uuid().optional(),
+  status: CategoryStatus.optional(),
+  sort_order: z.number().int().optional(),
+}).openapi('CreateCategory');
+
+export const UpdateCategoryBody = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  image_url: z.string().url().nullable().optional(),
+  parent_id: z.string().uuid().nullable().optional(),
+  status: CategoryStatus.optional(),
+  sort_order: z.number().int().optional(),
+}).openapi('UpdateCategory');
+
+export const CategoryQuery = PaginationQuery.extend({
+  status: CategoryStatus.optional().openapi({ param: { name: 'status', in: 'query' } }),
+});
+
+export const CategoryDetailResponse = CategoryResponse.extend({
+  products: z.array(z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    status: ProductStatus,
+    image_url: z.string().nullable(),
+  })),
+}).openapi('CategoryDetail');
+
+export const CategoryIdParam = z.object({
+  categoryId: z.string().uuid().openapi({ param: { name: 'categoryId', in: 'path' } }),
+});
+
+export const ManageCategoryProductsBody = z.object({
+  product_ids: z.array(z.string().uuid()).min(1).openapi({ example: ['550e8400-e29b-41d4-a716-446655440000'] }),
+}).openapi('ManageCategoryProducts');
+
+// ============================================================
+// COLLECTION SCHEMAS
+// ============================================================
+
+export const CollectionStatus = z.enum(['active', 'draft']);
+
+export const CollectionResponse = z.object({
+  id: z.string().uuid(),
+  name: z.string().openapi({ example: 'Summer Collection' }),
+  slug: z.string().openapi({ example: 'summer-collection' }),
+  description: z.string().nullable().openapi({ example: 'Hot summer picks' }),
+  image_url: z.string().nullable(),
+  status: CollectionStatus,
+  sort_order: z.number().int(),
+  product_count: z.number().int(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+}).openapi('Collection');
+
+export const CollectionListResponse = z.object({
+  items: z.array(CollectionResponse),
+  pagination: PaginationResponse,
+}).openapi('CollectionList');
+
+export const CreateCollectionBody = z.object({
+  name: z.string().min(1).openapi({ example: 'Summer Collection' }),
+  description: z.string().optional().openapi({ example: 'Hot summer picks' }),
+  image_url: z.string().url().optional(),
+  status: CollectionStatus.optional(),
+  sort_order: z.number().int().optional(),
+}).openapi('CreateCollection');
+
+export const UpdateCollectionBody = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  image_url: z.string().url().nullable().optional(),
+  status: CollectionStatus.optional(),
+  sort_order: z.number().int().optional(),
+}).openapi('UpdateCollection');
+
+export const CollectionQuery = PaginationQuery.extend({
+  status: CollectionStatus.optional().openapi({ param: { name: 'status', in: 'query' } }),
+});
+
+export const CollectionDetailResponse = CollectionResponse.extend({
+  products: z.array(z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    status: ProductStatus,
+    image_url: z.string().nullable(),
+    sort_order: z.number().int(),
+  })),
+}).openapi('CollectionDetail');
+
+export const CollectionIdParam = z.object({
+  collectionId: z.string().uuid().openapi({ param: { name: 'collectionId', in: 'path' } }),
+});
+
+export const ManageCollectionProductsBody = z.object({
+  product_ids: z.array(z.string().uuid()).min(1).openapi({ example: ['550e8400-e29b-41d4-a716-446655440000'] }),
+}).openapi('ManageCollectionProducts');
+
+export const ReorderCollectionProductsBody = z.object({
+  items: z.array(z.object({
+    product_id: z.string().uuid(),
+    sort_order: z.number().int().min(0),
+  })).min(1),
+}).openapi('ReorderCollectionProducts');
+
+// ============================================================
 // TYPE EXPORTS
 // ============================================================
 
@@ -560,3 +823,10 @@ export type Discount = z.infer<typeof DiscountResponse>;
 export type Webhook = z.infer<typeof WebhookResponse>;
 export type InventoryItemType = z.infer<typeof InventoryItem>;
 export type CartType = z.infer<typeof CartResponse>;
+export type CostResponseType = z.infer<typeof CostResponse>;
+export type AnalyticsSummaryType = z.infer<typeof AnalyticsSummary>;
+export type ProductProfitabilityType = z.infer<typeof ProductProfitability>;
+export type TrendDataPointType = z.infer<typeof TrendDataPoint>;
+export type InventoryValuationItemType = z.infer<typeof InventoryValuationItem>;
+export type Category = z.infer<typeof CategoryResponse>;
+export type Collection = z.infer<typeof CollectionResponse>;
