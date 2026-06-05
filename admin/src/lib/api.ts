@@ -117,6 +117,8 @@ export type Product = {
   status: 'active' | 'draft';
   created_at: string;
   variants: Variant[];
+  categories: Array<{ id: string; name: string; slug: string }>;
+  collections: Array<{ id: string; name: string; slug: string }>;
 };
 
 export type Variant = {
@@ -174,6 +176,33 @@ export type ProductProfitability = {
   refund_cents: number;
   discount_cents: number;
   net_revenue_cents: number;
+};
+
+export type Category = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image_url: string | null;
+  parent_id: string | null;
+  status: 'active' | 'draft';
+  sort_order: number;
+  product_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Collection = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image_url: string | null;
+  status: 'active' | 'draft';
+  sort_order: number;
+  product_count: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type PaginatedResponse<T> = {
@@ -460,5 +489,106 @@ export const api = {
   // Health check (for login validation)
   async healthCheck() {
     return request<{ name: string; version: string; ok: boolean }>('/');
+  },
+
+  // Categories
+  async getCategories(params?: { limit?: number; cursor?: string; status?: string }) {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.cursor) searchParams.set('cursor', params.cursor);
+    if (params?.status) searchParams.set('status', params.status);
+    const query = searchParams.toString();
+    return request<PaginatedResponse<Category>>(`/v1/categories${query ? `?${query}` : ''}`);
+  },
+
+  async getCategory(id: string) {
+    return request<Category & { products: Array<{ id: string; title: string; status: string; image_url: string | null }> }>(`/v1/categories/${id}`);
+  },
+
+  async createCategory(data: { name: string; description?: string; image_url?: string; parent_id?: string; status?: string; sort_order?: number }) {
+    return request<Category>('/v1/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateCategory(id: string, data: { name?: string; description?: string; image_url?: string | null; parent_id?: string | null; status?: string; sort_order?: number }) {
+    return request<Category>(`/v1/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteCategory(id: string) {
+    return request<{ deleted: boolean }>(`/v1/categories/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async addCategoryProducts(id: string, product_ids: string[]) {
+    return request<{ ok: boolean }>(`/v1/categories/${id}/products`, {
+      method: 'POST',
+      body: JSON.stringify({ product_ids }),
+    });
+  },
+
+  async removeCategoryProduct(id: string, productId: string) {
+    return request<{ ok: boolean }>(`/v1/categories/${id}/products/${productId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Collections
+  async getCollections(params?: { limit?: number; cursor?: string; status?: string }) {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.cursor) searchParams.set('cursor', params.cursor);
+    if (params?.status) searchParams.set('status', params.status);
+    const query = searchParams.toString();
+    return request<PaginatedResponse<Collection>>(`/v1/collections${query ? `?${query}` : ''}`);
+  },
+
+  async getCollection(id: string) {
+    return request<Collection & { products: Array<{ id: string; title: string; status: string; image_url: string | null; sort_order: number }> }>(`/v1/collections/${id}`);
+  },
+
+  async createCollection(data: { name: string; description?: string; image_url?: string; status?: string; sort_order?: number }) {
+    return request<Collection>('/v1/collections', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateCollection(id: string, data: { name?: string; description?: string; image_url?: string | null; status?: string; sort_order?: number }) {
+    return request<Collection>(`/v1/collections/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteCollection(id: string) {
+    return request<{ deleted: boolean }>(`/v1/collections/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async addCollectionProducts(id: string, product_ids: string[]) {
+    return request<{ ok: boolean }>(`/v1/collections/${id}/products`, {
+      method: 'POST',
+      body: JSON.stringify({ product_ids }),
+    });
+  },
+
+  async removeCollectionProduct(id: string, productId: string) {
+    return request<{ ok: boolean }>(`/v1/collections/${id}/products/${productId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async reorderCollectionProducts(id: string, items: Array<{ product_id: string; sort_order: number }>) {
+    return request<{ ok: boolean }>(`/v1/collections/${id}/products/reorder`, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    });
   },
 };

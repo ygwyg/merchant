@@ -335,6 +335,54 @@ CREATE INDEX IF NOT EXISTS idx_events_type_processed ON events(type, processed_a
 CREATE INDEX IF NOT EXISTS idx_ucp_checkout_sessions_status ON ucp_checkout_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_ucp_checkout_sessions_stripe ON ucp_checkout_sessions(stripe_session_id);
 CREATE INDEX IF NOT EXISTS idx_ucp_checkout_sessions_expires ON ucp_checkout_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  description TEXT DEFAULT '',
+  image_url TEXT,
+  parent_id TEXT REFERENCES categories(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'draft')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS product_categories (
+  category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  PRIMARY KEY (category_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  description TEXT DEFAULT '',
+  image_url TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'draft')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS collection_products (
+  collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (collection_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug);
+CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
+CREATE INDEX IF NOT EXISTS idx_categories_status ON categories(status);
+CREATE INDEX IF NOT EXISTS idx_product_categories_product ON product_categories(product_id);
+CREATE INDEX IF NOT EXISTS idx_collections_slug ON collections(slug);
+CREATE INDEX IF NOT EXISTS idx_collections_status ON collections(status);
+CREATE INDEX IF NOT EXISTS idx_collection_products_collection ON collection_products(collection_id);
+CREATE INDEX IF NOT EXISTS idx_collection_products_product ON collection_products(product_id);
+CREATE INDEX IF NOT EXISTS idx_collection_products_sort ON collection_products(collection_id, sort_order);
 `;
 
 export class MerchantDO extends DurableObject<MerchantEnv> {
@@ -408,6 +456,55 @@ export class MerchantDO extends DurableObject<MerchantEnv> {
       this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_costs_variant ON costs(variant_id)`);
       this.sql.exec(
         `INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('schema_version', '1', datetime('now'))`
+      );
+    }
+
+    if (version < 2) {
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        description TEXT DEFAULT '',
+        image_url TEXT,
+        parent_id TEXT REFERENCES categories(id),
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'draft')),
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS product_categories (
+        category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        PRIMARY KEY (category_id, product_id)
+      )`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS collections (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        description TEXT DEFAULT '',
+        image_url TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'draft')),
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS collection_products (
+        collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (collection_id, product_id)
+      )`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_categories_status ON categories(status)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_product_categories_product ON product_categories(product_id)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_collections_slug ON collections(slug)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_collections_status ON collections(status)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_collection_products_collection ON collection_products(collection_id)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_collection_products_product ON collection_products(product_id)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_collection_products_sort ON collection_products(collection_id, sort_order)`);
+      this.sql.exec(
+        `INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('schema_version', '2', datetime('now'))`
       );
     }
 

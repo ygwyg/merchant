@@ -14,6 +14,8 @@ import { discounts } from './routes/discounts';
 import { oauth } from './routes/oauth';
 import { ucp } from './routes/ucp';
 import { analytics } from './routes/analytics';
+import { categories } from './routes/categories';
+import { collections } from './routes/collections';
 import { rateLimitMiddleware } from './middleware/rate-limit';
 import { ApiError, type Env, type DOStub } from './types';
 import { MerchantDO } from './do';
@@ -72,6 +74,8 @@ app.route('/oauth', oauth);
 app.route('', oauth);
 app.route('', ucp);
 app.route('', analytics);
+app.route('/v1/categories', categories);
+app.route('/v1/collections', collections);
 
 app.doc('/openapi.json', {
   openapi: '3.0.0',
