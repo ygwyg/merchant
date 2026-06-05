@@ -341,6 +341,7 @@ export class MerchantDO extends DurableObject<MerchantEnv> {
   private sql: SqlStorage;
   private sessions: Map<WebSocket, { topics: Set<string> }> = new Map();
   private initialized = false;
+  private migrated = false;
 
   constructor(ctx: DurableObjectState, env: MerchantEnv) {
     super(ctx, env);
@@ -355,7 +356,62 @@ export class MerchantDO extends DurableObject<MerchantEnv> {
     for (const stmt of statements) {
       this.sql.exec(stmt);
     }
+    this.runMigrations();
     this.initialized = true;
+  }
+
+  private runMigrations(): void {
+    if (this.migrated) return;
+    const [row] = this.sql.exec(
+      `SELECT value FROM config WHERE key = ?`,
+      'schema_version'
+    ).toArray() as { value: string }[];
+    const version = row ? parseInt(row.value, 10) : 0;
+
+    if (version < 1) {
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS costs (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL REFERENCES products(id),
+        variant_id TEXT UNIQUE REFERENCES variants(id),
+        cost_cents INTEGER NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      // Pre-computation tables for future materialized aggregation pipelines.
+      // Currently unused — all analytics queries compute live from orders/inventory.
+      // These tables exist to support scheduled rollups when the data volume grows.
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS analytics_daily (
+        date TEXT NOT NULL,
+        total_revenue_cents INTEGER NOT NULL DEFAULT 0,
+        total_cost_cents INTEGER NOT NULL DEFAULT 0,
+        total_gross_profit_cents INTEGER NOT NULL DEFAULT 0,
+        total_orders INTEGER NOT NULL DEFAULT 0,
+        total_refunds_cents INTEGER NOT NULL DEFAULT 0,
+        total_discounts_cents INTEGER NOT NULL DEFAULT 0,
+        inventory_value_cents INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (date)
+      )`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS analytics_product (
+        product_id TEXT NOT NULL,
+        units_sold INTEGER NOT NULL DEFAULT 0,
+        revenue_cents INTEGER NOT NULL DEFAULT 0,
+        cost_cents INTEGER NOT NULL DEFAULT 0,
+        gross_profit_cents INTEGER NOT NULL DEFAULT 0,
+        refund_cents INTEGER NOT NULL DEFAULT 0,
+        discount_cents INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (product_id),
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      )`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_costs_product ON costs(product_id)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_costs_variant ON costs(variant_id)`);
+      this.sql.exec(
+        `INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('schema_version', '1', datetime('now'))`
+      );
+    }
+
+    this.migrated = true;
   }
 
   async fetch(request: Request): Promise<Response> {

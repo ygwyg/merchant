@@ -161,6 +161,21 @@ export type WebhookCreated = Webhook & {
   secret: string; // Only returned on creation
 };
 
+export type ProductProfitability = {
+  product_id: string;
+  product_title: string;
+  product_status: string;
+  variants_count: number;
+  units_sold: number;
+  revenue_cents: number;
+  cost_cents: number;
+  gross_profit_cents: number;
+  gross_margin_bps: number;
+  refund_cents: number;
+  discount_cents: number;
+  net_revenue_cents: number;
+};
+
 export type PaginatedResponse<T> = {
   items: T[];
   pagination: {
@@ -360,6 +375,86 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  },
+
+  // Analytics types
+  async getAnalyticsDashboard() {
+    return request<{
+      summary: {
+        total_revenue_cents: number;
+        total_cost_cents: number;
+        gross_profit_cents: number;
+        gross_margin_bps: number;
+        total_orders: number;
+        total_refunds_cents: number;
+        total_discounts_cents: number;
+        inventory_value_cents: number;
+        unsold_inventory_cents: number;
+      };
+      top_products: ProductProfitability[];
+      bottom_products: ProductProfitability[];
+    }>('/v1/analytics/dashboard');
+  },
+
+  async getAnalyticsProducts(params?: { sort?: string; order?: string }) {
+    const searchParams = new URLSearchParams();
+    if (params?.sort) searchParams.set('sort', params.sort);
+    if (params?.order) searchParams.set('order', params.order);
+    const query = searchParams.toString();
+    return request<{
+      items: ProductProfitability[];
+      totals: { total_revenue_cents: number; total_cost_cents: number; total_profit_cents: number; total_units_sold: number };
+    }>(`/v1/analytics/products${query ? `?${query}` : ''}`);
+  },
+
+  async getAnalyticsTrends(days?: number) {
+    const query = days ? `?days=${days}` : '';
+    return request<{
+      items: Array<{
+        date: string;
+        revenue_cents: number;
+        cost_cents: number;
+        profit_cents: number;
+        margin_bps: number;
+        orders_count: number;
+      }>;
+    }>(`/v1/analytics/trends${query}`);
+  },
+
+  async getInventoryValuation() {
+    return request<{
+      items: Array<{
+        sku: string;
+        variant_title: string | null;
+        product_title: string | null;
+        on_hand: number;
+        cost_cents: number;
+        total_value_cents: number;
+        potential_revenue_cents: number;
+      }>;
+      totals: { total_value_cents: number; total_potential_revenue_cents: number; total_on_hand: number };
+    }>('/v1/analytics/inventory-valuation');
+  },
+
+  async setProductCost(productId: string, cost_cents: number) {
+    return request<{ ok: boolean }>(`/v1/products/${productId}/cost`, {
+      method: 'PATCH',
+      body: JSON.stringify({ cost_cents }),
+    });
+  },
+
+  async setVariantCost(productId: string, variantId: string, cost_cents: number) {
+    return request<{ ok: boolean }>(`/v1/products/${productId}/variants/${variantId}/cost`, {
+      method: 'PATCH',
+      body: JSON.stringify({ cost_cents }),
+    });
+  },
+
+  async getProductCosts(productId: string) {
+    return request<{
+      product_cost: { cost_cents: number; currency: string; updated_at: string } | null;
+      variant_costs: Array<{ variant_id: string; sku: string; variant_title: string; cost_cents: number; currency: string; updated_at: string }>;
+    }>(`/v1/products/${productId}/costs`);
   },
 
   // Health check (for login validation)
