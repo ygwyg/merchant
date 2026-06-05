@@ -16,7 +16,6 @@ import {
   ChevronsUpDown,
   Loader2,
   Mail,
-  Phone,
   MapPin,
   ShoppingBag,
 } from 'lucide-react';

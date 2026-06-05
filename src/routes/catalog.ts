@@ -69,6 +69,8 @@ app.openapi(listProducts, async (c) => {
 
   const productIds = products.map((p) => p.id);
   const variantsByProduct: Record<string, any[]> = {};
+  const categoriesByProduct: Record<string, any[]> = {};
+  const collectionsByProduct: Record<string, any[]> = {};
 
   if (productIds.length > 0) {
     const placeholders = productIds.map(() => '?').join(',');
@@ -82,6 +84,34 @@ app.openapi(listProducts, async (c) => {
         variantsByProduct[v.product_id] = [];
       }
       variantsByProduct[v.product_id].push(v);
+    }
+
+    const allCategories = await db.query<any>(
+      `SELECT pc.product_id, c.id, c.name, c.slug FROM product_categories pc
+       JOIN categories c ON c.id = pc.category_id
+       WHERE pc.product_id IN (${placeholders})`,
+      productIds
+    );
+
+    for (const link of allCategories) {
+      if (!categoriesByProduct[link.product_id]) {
+        categoriesByProduct[link.product_id] = [];
+      }
+      categoriesByProduct[link.product_id].push({ id: link.id, name: link.name, slug: link.slug });
+    }
+
+    const allCollections = await db.query<any>(
+      `SELECT cp.product_id, col.id, col.name, col.slug FROM collection_products cp
+       JOIN collections col ON col.id = cp.collection_id
+       WHERE cp.product_id IN (${placeholders})`,
+      productIds
+    );
+
+    for (const link of allCollections) {
+      if (!collectionsByProduct[link.product_id]) {
+        collectionsByProduct[link.product_id] = [];
+      }
+      collectionsByProduct[link.product_id].push({ id: link.id, name: link.name, slug: link.slug });
     }
   }
 
@@ -98,6 +128,8 @@ app.openapi(listProducts, async (c) => {
       price_cents: v.price_cents,
       image_url: v.image_url,
     })),
+    categories: categoriesByProduct[p.id] || [],
+    collections: collectionsByProduct[p.id] || [],
   }));
 
   const nextCursor = hasMore && items.length > 0 ? items[items.length - 1].created_at : null;
@@ -130,6 +162,20 @@ app.openapi(getProduct, async (c) => {
     [id]
   );
 
+  const categories = await db.query<any>(
+    `SELECT c.id, c.name, c.slug FROM categories c
+     JOIN product_categories pc ON pc.category_id = c.id
+     WHERE pc.product_id = ?`,
+    [id]
+  );
+
+  const collections = await db.query<any>(
+    `SELECT col.id, col.name, col.slug FROM collections col
+     JOIN collection_products cp ON cp.collection_id = col.id
+     WHERE cp.product_id = ?`,
+    [id]
+  );
+
   return c.json({
     id: product.id,
     title: product.title,
@@ -143,6 +189,8 @@ app.openapi(getProduct, async (c) => {
       price_cents: v.price_cents,
       image_url: v.image_url,
     })),
+    categories: categories.map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
+    collections: collections.map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
   }, 200);
 });
 
@@ -173,7 +221,7 @@ app.openapi(createProduct, async (c) => {
   );
 
   return c.json(
-    { id, title, description: description || null, status: 'active' as const, created_at: timestamp, variants: [] },
+    { id, title, description: description || null, status: 'active' as const, created_at: timestamp, variants: [], categories: [], collections: [] },
     201
   );
 });
@@ -227,6 +275,20 @@ app.openapi(updateProduct, async (c) => {
   const [product] = await db.query<any>(`SELECT * FROM products WHERE id = ?`, [id]);
   const variants = await db.query<any>(`SELECT * FROM variants WHERE product_id = ?`, [id]);
 
+  const categories = await db.query<any>(
+    `SELECT c.id, c.name, c.slug FROM categories c
+     JOIN product_categories pc ON pc.category_id = c.id
+     WHERE pc.product_id = ?`,
+    [id]
+  );
+
+  const collections = await db.query<any>(
+    `SELECT col.id, col.name, col.slug FROM collections col
+     JOIN collection_products cp ON cp.collection_id = col.id
+     WHERE cp.product_id = ?`,
+    [id]
+  );
+
   return c.json({
     id: product.id,
     title: product.title,
@@ -240,6 +302,8 @@ app.openapi(updateProduct, async (c) => {
       price_cents: v.price_cents,
       image_url: v.image_url,
     })),
+    categories: categories.map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
+    collections: collections.map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
   }, 200);
 });
 

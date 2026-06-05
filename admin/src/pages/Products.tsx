@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useReactTable,
@@ -22,6 +22,8 @@ import {
   Upload,
   X,
   Pencil,
+  Tags,
+  Layers,
 } from 'lucide-react';
 import { api, Product, Variant } from '../lib/api';
 import { StatusBadge } from '../components/StatusBadge';
@@ -48,8 +50,17 @@ export function Products() {
   const [variantSku, setVariantSku] = useState('');
   const [variantTitle, setVariantTitle] = useState('');
   const [variantPrice, setVariantPrice] = useState('');
+  const [variantCost, setVariantCost] = useState('');
   const [variantImage, setVariantImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [productCostValue, setProductCostValue] = useState('');
+  const pendingCost = useRef<number | null>(null);
+
+  // Category/collection management
+  const [catSearch, setCatSearch] = useState('');
+  const [colSearch, setColSearch] = useState('');
+  const [showCatPicker, setShowCatPicker] = useState(false);
+  const [showColPicker, setShowColPicker] = useState(false);
 
   // Fetch products
   const { data, isLoading, isFetching } = useQuery({
@@ -58,6 +69,16 @@ export function Products() {
   });
 
   const products = data?.items || [];
+
+  const { data: allCategories } = useQuery({
+    queryKey: ['categories', 'all'],
+    queryFn: () => api.getCategories({ limit: 100 }),
+  });
+
+  const { data: allCollections } = useQuery({
+    queryKey: ['collections', 'all'],
+    queryFn: () => api.getCollections({ limit: 100 }),
+  });
 
   // Create product mutation
   const createMutation = useMutation({
@@ -80,8 +101,16 @@ export function Products() {
       productId: string;
       data: Parameters<typeof api.createVariant>[1];
     }) => api.createVariant(productId, data),
-    onSuccess: () => {
+    onSuccess: (variant) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (pendingCost.current !== null && pendingCost.current >= 0 && selectedProduct) {
+        setVariantCostMutation.mutate({
+          productId: selectedProduct.id,
+          variantId: variant.id,
+          cost_cents: pendingCost.current,
+        });
+        pendingCost.current = null;
+      }
       refreshSelectedProduct();
       resetVariantForm();
       setVariantMode(null);
@@ -118,16 +147,77 @@ export function Products() {
     },
   });
 
+  // Product cost mutation
+  const setProductCostMutation = useMutation({
+    mutationFn: ({ id, cost_cents }: { id: string; cost_cents: number }) =>
+      api.setProductCost(id, cost_cents),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
+  // Variant cost mutation
+  const setVariantCostMutation = useMutation({
+    mutationFn: ({ productId, variantId, cost_cents }: { productId: string; variantId: string; cost_cents: number }) =>
+      api.setVariantCost(productId, variantId, cost_cents),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
+  // Category/collection mutations
+  const addCategoryMutation = useMutation({
+    mutationFn: ({ categoryId, productId }: { categoryId: string; productId: string }) =>
+      api.addCategoryProducts(categoryId, [productId]),
+    onSuccess: () => {
+      refreshSelectedProduct();
+      setShowCatPicker(false);
+    },
+  });
+
+  const removeCategoryMutation = useMutation({
+    mutationFn: ({ categoryId, productId }: { categoryId: string; productId: string }) =>
+      api.removeCategoryProduct(categoryId, productId),
+    onSuccess: () => refreshSelectedProduct(),
+  });
+
+  const addCollectionMutation = useMutation({
+    mutationFn: ({ collectionId, productId }: { collectionId: string; productId: string }) =>
+      api.addCollectionProducts(collectionId, [productId]),
+    onSuccess: () => {
+      refreshSelectedProduct();
+      setShowColPicker(false);
+    },
+  });
+
+  const removeCollectionMutation = useMutation({
+    mutationFn: ({ collectionId, productId }: { collectionId: string; productId: string }) =>
+      api.removeCollectionProduct(collectionId, productId),
+    onSuccess: () => refreshSelectedProduct(),
+  });
+
   const refreshSelectedProduct = () => {
     if (selectedProduct) {
       api.getProduct(selectedProduct.id).then(setSelectedProduct);
     }
   };
 
+  // Load stored cost when a product is selected for editing
+  useEffect(() => {
+    if (selectedProduct) {
+      api.getProductCosts(selectedProduct.id).then((costs) => {
+        setProductCostValue(costs.product_cost ? String(costs.product_cost.cost_cents) : '');
+      }).catch(() => setProductCostValue(''));
+    } else {
+      setProductCostValue('');
+    }
+  }, [selectedProduct?.id]);
+
   const resetVariantForm = () => {
     setVariantSku('');
     setVariantTitle('');
     setVariantPrice('');
+    setVariantCost('');
     setVariantImage(null);
   };
 
@@ -136,6 +226,7 @@ export function Products() {
     setVariantSku(variant.sku);
     setVariantTitle(variant.title);
     setVariantPrice(String(variant.price_cents));
+    setVariantCost('');
     setVariantImage(variant.image_url);
     setVariantMode('edit');
   };
@@ -164,6 +255,7 @@ export function Products() {
     if (!selectedProduct) return;
     const price = parseInt(variantPrice, 10);
     if (isNaN(price)) return;
+    const cost = variantCost ? parseInt(variantCost, 10) : null;
 
     if (variantMode === 'edit' && editingVariant) {
       updateVariantMutation.mutate({
@@ -176,7 +268,15 @@ export function Products() {
           image_url: variantImage,
         },
       });
+      if (cost !== null && !isNaN(cost) && cost >= 0) {
+        setVariantCostMutation.mutate({
+          productId: selectedProduct.id,
+          variantId: editingVariant.id,
+          cost_cents: cost,
+        });
+      }
     } else {
+      pendingCost.current = (cost !== null && !isNaN(cost) && cost >= 0) ? cost : null;
       createVariantMutation.mutate({
         productId: selectedProduct.id,
         data: {
@@ -494,6 +594,33 @@ export function Products() {
                     <option value="active">active</option>
                   </select>
                 </div>
+                <div>
+                  <label
+                    className="block text-xs font-medium uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    Default Cost (cents)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={productCostValue}
+                    onChange={(e) => setProductCostValue(e.target.value)}
+                    onBlur={(e) => {
+                      const cost = parseInt(e.target.value, 10);
+                      if (!isNaN(cost) && cost >= 0) {
+                        setProductCostMutation.mutate({ id: selectedProduct.id, cost_cents: cost });
+                      }
+                    }}
+                    placeholder="e.g. 1000"
+                    className="w-full px-3 py-2 font-mono text-sm rounded-lg focus:outline-none focus:ring-2"
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)',
+                    }}
+                  />
+                </div>
               </div>
               <div>
                 <label
@@ -554,6 +681,166 @@ export function Products() {
                   {selectedProduct.variants.map((v) => (
                     <VariantCard key={v.id} variant={v} onEdit={() => openEditVariant(v)} />
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Categories */}
+            <div className="p-3 rounded-lg" style={{ border: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  <Tags size={14} className="inline mr-1" />
+                  Categories ({selectedProduct.categories?.length || 0})
+                </h4>
+                <button
+                  onClick={() => setShowCatPicker(true)}
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  + Add
+                </button>
+              </div>
+              {!showCatPicker && (!selectedProduct.categories || selectedProduct.categories.length === 0) ? (
+                <p className="font-mono text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  No categories assigned
+                </p>
+              ) : null}
+              {!selectedProduct.categories?.length && !showCatPicker ? null : (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedProduct.categories?.map((cat) => (
+                    <span
+                      key={cat.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono"
+                      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text)' }}
+                    >
+                      {cat.name}
+                      <button
+                        onClick={() => removeCategoryMutation.mutate({ categoryId: cat.id, productId: selectedProduct.id })}
+                        className="hover:text-red-500"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {showCatPicker && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={catSearch}
+                    onChange={(e) => setCatSearch(e.target.value)}
+                    placeholder="Search categories..."
+                    className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    autoFocus
+                  />
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {(allCategories?.items || [])
+                      .filter((c) => !selectedProduct.categories?.some((pc) => pc.id === c.id))
+                      .filter((c) => !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()))
+                      .slice(0, 10)
+                      .map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => addCategoryMutation.mutate({ categoryId: cat.id, productId: selectedProduct.id })}
+                          className="w-full text-left px-2 py-1.5 rounded text-sm font-mono hover:bg-[var(--bg-hover)] transition-colors"
+                          style={{ color: 'var(--text)' }}
+                        >
+                          {cat.name}
+                        </button>
+                      ))}
+                    {(allCategories?.items || []).filter((c) => !selectedProduct.categories?.some((pc) => pc.id === c.id)).length === 0 && (
+                      <p className="text-xs font-mono px-2" style={{ color: 'var(--text-muted)' }}>All categories assigned</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setShowCatPicker(false); setCatSearch(''); }}
+                    className="text-xs font-mono hover:underline"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Collections */}
+            <div className="p-3 rounded-lg" style={{ border: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  <Layers size={14} className="inline mr-1" />
+                  Collections ({selectedProduct.collections?.length || 0})
+                </h4>
+                <button
+                  onClick={() => setShowColPicker(true)}
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  + Add
+                </button>
+              </div>
+              {!showColPicker && (!selectedProduct.collections || selectedProduct.collections.length === 0) ? (
+                <p className="font-mono text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  No collections assigned
+                </p>
+              ) : null}
+              {!selectedProduct.collections?.length && !showColPicker ? null : (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedProduct.collections?.map((col) => (
+                    <span
+                      key={col.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono"
+                      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text)' }}
+                    >
+                      {col.name}
+                      <button
+                        onClick={() => removeCollectionMutation.mutate({ collectionId: col.id, productId: selectedProduct.id })}
+                        className="hover:text-red-500"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {showColPicker && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={colSearch}
+                    onChange={(e) => setColSearch(e.target.value)}
+                    placeholder="Search collections..."
+                    className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    autoFocus
+                  />
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {(allCollections?.items || [])
+                      .filter((c) => !selectedProduct.collections?.some((pc) => pc.id === c.id))
+                      .filter((c) => !colSearch || c.name.toLowerCase().includes(colSearch.toLowerCase()))
+                      .slice(0, 10)
+                      .map((col) => (
+                        <button
+                          key={col.id}
+                          onClick={() => addCollectionMutation.mutate({ collectionId: col.id, productId: selectedProduct.id })}
+                          className="w-full text-left px-2 py-1.5 rounded text-sm font-mono hover:bg-[var(--bg-hover)] transition-colors"
+                          style={{ color: 'var(--text)' }}
+                        >
+                          {col.name}
+                        </button>
+                      ))}
+                    {(allCollections?.items || []).filter((c) => !selectedProduct.collections?.some((pc) => pc.id === c.id)).length === 0 && (
+                      <p className="text-xs font-mono px-2" style={{ color: 'var(--text-muted)' }}>All collections assigned</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setShowColPicker(false); setColSearch(''); }}
+                    className="text-xs font-mono hover:underline"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               )}
             </div>
@@ -631,6 +918,27 @@ export function Products() {
                     onChange={(e) => setVariantPrice(e.target.value)}
                     placeholder="e.g. 2999"
                     required
+                    min="0"
+                    className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    className="block text-xs font-medium uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    Cost (cents)
+                  </label>
+                  <input
+                    type="number"
+                    value={variantCost}
+                    onChange={(e) => setVariantCost(e.target.value)}
+                    placeholder="e.g. 1000"
                     min="0"
                     className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
                     style={{

@@ -10,10 +10,13 @@ import {
   PanelLeft,
   Webhook,
   Users,
+  BarChart3,
+  Tags,
+  Layers,
 } from 'lucide-react';
 import clsx from 'clsx';
 
-type Page = 'orders' | 'customers' | 'inventory' | 'products' | 'webhooks';
+type Page = 'orders' | 'customers' | 'inventory' | 'products' | 'webhooks' | 'analytics' | 'categories' | 'collections';
 
 type LayoutProps = {
   children: ReactNode;
@@ -29,6 +32,9 @@ const navItems: { id: Page; label: string; icon: typeof ClipboardList }[] = [
   { id: 'customers', label: 'Customers', icon: Users },
   { id: 'inventory', label: 'Inventory', icon: Boxes },
   { id: 'products', label: 'Products', icon: Package },
+  { id: 'categories', label: 'Categories', icon: Tags },
+  { id: 'collections', label: 'Collections', icon: Layers },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook },
 ];
 
