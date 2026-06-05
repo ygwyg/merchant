@@ -22,6 +22,8 @@ import {
   Upload,
   X,
   Pencil,
+  Tags,
+  Layers,
 } from 'lucide-react';
 import { api, Product, Variant } from '../lib/api';
 import { StatusBadge } from '../components/StatusBadge';
@@ -54,6 +56,12 @@ export function Products() {
   const [productCostValue, setProductCostValue] = useState('');
   const pendingCost = useRef<number | null>(null);
 
+  // Category/collection management
+  const [catSearch, setCatSearch] = useState('');
+  const [colSearch, setColSearch] = useState('');
+  const [showCatPicker, setShowCatPicker] = useState(false);
+  const [showColPicker, setShowColPicker] = useState(false);
+
   // Fetch products
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['products', statusFilter],
@@ -61,6 +69,16 @@ export function Products() {
   });
 
   const products = data?.items || [];
+
+  const { data: allCategories } = useQuery({
+    queryKey: ['categories', 'all'],
+    queryFn: () => api.getCategories({ limit: 100 }),
+  });
+
+  const { data: allCollections } = useQuery({
+    queryKey: ['collections', 'all'],
+    queryFn: () => api.getCollections({ limit: 100 }),
+  });
 
   // Create product mutation
   const createMutation = useMutation({
@@ -145,6 +163,37 @@ export function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
+  });
+
+  // Category/collection mutations
+  const addCategoryMutation = useMutation({
+    mutationFn: ({ categoryId, productId }: { categoryId: string; productId: string }) =>
+      api.addCategoryProducts(categoryId, [productId]),
+    onSuccess: () => {
+      refreshSelectedProduct();
+      setShowCatPicker(false);
+    },
+  });
+
+  const removeCategoryMutation = useMutation({
+    mutationFn: ({ categoryId, productId }: { categoryId: string; productId: string }) =>
+      api.removeCategoryProduct(categoryId, productId),
+    onSuccess: () => refreshSelectedProduct(),
+  });
+
+  const addCollectionMutation = useMutation({
+    mutationFn: ({ collectionId, productId }: { collectionId: string; productId: string }) =>
+      api.addCollectionProducts(collectionId, [productId]),
+    onSuccess: () => {
+      refreshSelectedProduct();
+      setShowColPicker(false);
+    },
+  });
+
+  const removeCollectionMutation = useMutation({
+    mutationFn: ({ collectionId, productId }: { collectionId: string; productId: string }) =>
+      api.removeCollectionProduct(collectionId, productId),
+    onSuccess: () => refreshSelectedProduct(),
   });
 
   const refreshSelectedProduct = () => {
@@ -632,6 +681,166 @@ export function Products() {
                   {selectedProduct.variants.map((v) => (
                     <VariantCard key={v.id} variant={v} onEdit={() => openEditVariant(v)} />
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Categories */}
+            <div className="p-3 rounded-lg" style={{ border: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  <Tags size={14} className="inline mr-1" />
+                  Categories ({selectedProduct.categories?.length || 0})
+                </h4>
+                <button
+                  onClick={() => setShowCatPicker(true)}
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  + Add
+                </button>
+              </div>
+              {!showCatPicker && (!selectedProduct.categories || selectedProduct.categories.length === 0) ? (
+                <p className="font-mono text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  No categories assigned
+                </p>
+              ) : null}
+              {!selectedProduct.categories?.length && !showCatPicker ? null : (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedProduct.categories?.map((cat) => (
+                    <span
+                      key={cat.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono"
+                      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text)' }}
+                    >
+                      {cat.name}
+                      <button
+                        onClick={() => removeCategoryMutation.mutate({ categoryId: cat.id, productId: selectedProduct.id })}
+                        className="hover:text-red-500"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {showCatPicker && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={catSearch}
+                    onChange={(e) => setCatSearch(e.target.value)}
+                    placeholder="Search categories..."
+                    className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    autoFocus
+                  />
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {(allCategories?.items || [])
+                      .filter((c) => !selectedProduct.categories?.some((pc) => pc.id === c.id))
+                      .filter((c) => !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()))
+                      .slice(0, 10)
+                      .map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => addCategoryMutation.mutate({ categoryId: cat.id, productId: selectedProduct.id })}
+                          className="w-full text-left px-2 py-1.5 rounded text-sm font-mono hover:bg-[var(--bg-hover)] transition-colors"
+                          style={{ color: 'var(--text)' }}
+                        >
+                          {cat.name}
+                        </button>
+                      ))}
+                    {(allCategories?.items || []).filter((c) => !selectedProduct.categories?.some((pc) => pc.id === c.id)).length === 0 && (
+                      <p className="text-xs font-mono px-2" style={{ color: 'var(--text-muted)' }}>All categories assigned</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setShowCatPicker(false); setCatSearch(''); }}
+                    className="text-xs font-mono hover:underline"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Collections */}
+            <div className="p-3 rounded-lg" style={{ border: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  <Layers size={14} className="inline mr-1" />
+                  Collections ({selectedProduct.collections?.length || 0})
+                </h4>
+                <button
+                  onClick={() => setShowColPicker(true)}
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  + Add
+                </button>
+              </div>
+              {!showColPicker && (!selectedProduct.collections || selectedProduct.collections.length === 0) ? (
+                <p className="font-mono text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  No collections assigned
+                </p>
+              ) : null}
+              {!selectedProduct.collections?.length && !showColPicker ? null : (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedProduct.collections?.map((col) => (
+                    <span
+                      key={col.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono"
+                      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text)' }}
+                    >
+                      {col.name}
+                      <button
+                        onClick={() => removeCollectionMutation.mutate({ collectionId: col.id, productId: selectedProduct.id })}
+                        className="hover:text-red-500"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {showColPicker && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={colSearch}
+                    onChange={(e) => setColSearch(e.target.value)}
+                    placeholder="Search collections..."
+                    className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    autoFocus
+                  />
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {(allCollections?.items || [])
+                      .filter((c) => !selectedProduct.collections?.some((pc) => pc.id === c.id))
+                      .filter((c) => !colSearch || c.name.toLowerCase().includes(colSearch.toLowerCase()))
+                      .slice(0, 10)
+                      .map((col) => (
+                        <button
+                          key={col.id}
+                          onClick={() => addCollectionMutation.mutate({ collectionId: col.id, productId: selectedProduct.id })}
+                          className="w-full text-left px-2 py-1.5 rounded text-sm font-mono hover:bg-[var(--bg-hover)] transition-colors"
+                          style={{ color: 'var(--text)' }}
+                        >
+                          {col.name}
+                        </button>
+                      ))}
+                    {(allCollections?.items || []).filter((c) => !selectedProduct.collections?.some((pc) => pc.id === c.id)).length === 0 && (
+                      <p className="text-xs font-mono px-2" style={{ color: 'var(--text-muted)' }}>All collections assigned</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setShowColPicker(false); setColSearch(''); }}
+                    className="text-xs font-mono hover:underline"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               )}
             </div>
