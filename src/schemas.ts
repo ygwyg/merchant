@@ -549,6 +549,118 @@ export const ImageUploadResponse = z.object({
 }).openapi('ImageUpload');
 
 // ============================================================
+// ANALYTICS / FINANCIAL SCHEMAS
+// ============================================================
+
+export const SetCostBody = z.object({
+  cost_cents: z.number().int().min(0).openapi({ example: 1500, description: 'Cost in minor currency units (cents)' }),
+}).openapi('SetCost');
+
+export const CostResponse = z.object({
+  product_id: z.string().uuid(),
+  variant_id: z.string().uuid().nullable(),
+  cost_cents: z.number().int(),
+  currency: z.string(),
+  updated_at: z.string().datetime(),
+}).openapi('Cost');
+
+export const AnalyticsSummary = z.object({
+  total_revenue_cents: z.number().int(),
+  total_cost_cents: z.number().int(),
+  gross_profit_cents: z.number().int(),
+  gross_margin_bps: z.number().int(),
+  total_orders: z.number().int(),
+  total_refunds_cents: z.number().int(),
+  total_discounts_cents: z.number().int(),
+  inventory_value_cents: z.number().int(),
+  unsold_inventory_cents: z.number().int(),
+}).openapi('AnalyticsSummary');
+
+export const ProductProfitability = z.object({
+  product_id: z.string().uuid(),
+  product_title: z.string(),
+  product_status: z.string(),
+  variants_count: z.number().int(),
+  units_sold: z.number().int(),
+  revenue_cents: z.number().int(),
+  cost_cents: z.number().int(),
+  gross_profit_cents: z.number().int(),
+  gross_margin_bps: z.number().int(),
+  refund_cents: z.number().int(),
+  discount_cents: z.number().int(),
+  net_revenue_cents: z.number().int(),
+}).openapi('ProductProfitability');
+
+export const ProductProfitabilityList = z.object({
+  items: z.array(ProductProfitability),
+  totals: z.object({
+    total_revenue_cents: z.number().int(),
+    total_cost_cents: z.number().int(),
+    total_profit_cents: z.number().int(),
+    total_units_sold: z.number().int(),
+  }),
+}).openapi('ProductProfitabilityList');
+
+export const TrendDataPoint = z.object({
+  date: z.string(),
+  revenue_cents: z.number().int(),
+  cost_cents: z.number().int(),
+  profit_cents: z.number().int(),
+  margin_bps: z.number().int(),
+  orders_count: z.number().int(),
+}).openapi('TrendDataPoint');
+
+export const TrendResponse = z.object({
+  items: z.array(TrendDataPoint),
+}).openapi('TrendResponse');
+
+export const InventoryValuationItem = z.object({
+  sku: z.string(),
+  variant_title: z.string().nullable(),
+  product_title: z.string().nullable(),
+  on_hand: z.number().int(),
+  cost_cents: z.number().int(),
+  total_value_cents: z.number().int(),
+  potential_revenue_cents: z.number().int(),
+}).openapi('InventoryValuationItem');
+
+export const InventoryValuationResponse = z.object({
+  items: z.array(InventoryValuationItem),
+  totals: z.object({
+    total_value_cents: z.number().int(),
+    total_potential_revenue_cents: z.number().int(),
+    total_on_hand: z.number().int(),
+  }),
+}).openapi('InventoryValuationResponse');
+
+export const AnalyticsOrderProfitability = z.object({
+  order_id: z.string().uuid(),
+  order_number: z.string(),
+  status: z.string(),
+  customer_email: z.string(),
+  revenue_cents: z.number().int(),
+  cost_cents: z.number().int(),
+  gross_profit_cents: z.number().int(),
+  gross_margin_bps: z.number().int(),
+  discount_cents: z.number().int(),
+  refund_cents: z.number().int(),
+  net_profit_cents: z.number().int(),
+  created_at: z.string().datetime(),
+}).openapi('OrderProfitability');
+
+export const AnalyticsDashboardResponse = z.object({
+  summary: AnalyticsSummary,
+  top_products: z.array(ProductProfitability),
+  bottom_products: z.array(ProductProfitability),
+}).openapi('AnalyticsDashboardResponse');
+
+export const AnalyticsQuery = z.object({
+  days: z.string().optional().openapi({ param: { name: 'days', in: 'query' }, example: '30' }),
+  sort: z.enum(['profit', 'revenue', 'margin', 'units']).optional().openapi({ param: { name: 'sort', in: 'query' } }),
+  order: z.enum(['desc', 'asc']).optional().openapi({ param: { name: 'order', in: 'query' } }),
+});
+
+// ============================================================
 // TYPE EXPORTS
 // ============================================================
 
@@ -560,3 +672,8 @@ export type Discount = z.infer<typeof DiscountResponse>;
 export type Webhook = z.infer<typeof WebhookResponse>;
 export type InventoryItemType = z.infer<typeof InventoryItem>;
 export type CartType = z.infer<typeof CartResponse>;
+export type CostResponseType = z.infer<typeof CostResponse>;
+export type AnalyticsSummaryType = z.infer<typeof AnalyticsSummary>;
+export type ProductProfitabilityType = z.infer<typeof ProductProfitability>;
+export type TrendDataPointType = z.infer<typeof TrendDataPoint>;
+export type InventoryValuationItemType = z.infer<typeof InventoryValuationItem>;

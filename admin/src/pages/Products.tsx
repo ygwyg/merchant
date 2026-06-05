@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useReactTable,
@@ -48,8 +48,11 @@ export function Products() {
   const [variantSku, setVariantSku] = useState('');
   const [variantTitle, setVariantTitle] = useState('');
   const [variantPrice, setVariantPrice] = useState('');
+  const [variantCost, setVariantCost] = useState('');
   const [variantImage, setVariantImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [productCostValue, setProductCostValue] = useState('');
+  const pendingCost = useRef<number | null>(null);
 
   // Fetch products
   const { data, isLoading, isFetching } = useQuery({
@@ -80,8 +83,16 @@ export function Products() {
       productId: string;
       data: Parameters<typeof api.createVariant>[1];
     }) => api.createVariant(productId, data),
-    onSuccess: () => {
+    onSuccess: (variant) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (pendingCost.current !== null && pendingCost.current >= 0 && selectedProduct) {
+        setVariantCostMutation.mutate({
+          productId: selectedProduct.id,
+          variantId: variant.id,
+          cost_cents: pendingCost.current,
+        });
+        pendingCost.current = null;
+      }
       refreshSelectedProduct();
       resetVariantForm();
       setVariantMode(null);
@@ -118,16 +129,46 @@ export function Products() {
     },
   });
 
+  // Product cost mutation
+  const setProductCostMutation = useMutation({
+    mutationFn: ({ id, cost_cents }: { id: string; cost_cents: number }) =>
+      api.setProductCost(id, cost_cents),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
+  // Variant cost mutation
+  const setVariantCostMutation = useMutation({
+    mutationFn: ({ productId, variantId, cost_cents }: { productId: string; variantId: string; cost_cents: number }) =>
+      api.setVariantCost(productId, variantId, cost_cents),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
   const refreshSelectedProduct = () => {
     if (selectedProduct) {
       api.getProduct(selectedProduct.id).then(setSelectedProduct);
     }
   };
 
+  // Load stored cost when a product is selected for editing
+  useEffect(() => {
+    if (selectedProduct) {
+      api.getProductCosts(selectedProduct.id).then((costs) => {
+        setProductCostValue(costs.product_cost ? String(costs.product_cost.cost_cents) : '');
+      }).catch(() => setProductCostValue(''));
+    } else {
+      setProductCostValue('');
+    }
+  }, [selectedProduct?.id]);
+
   const resetVariantForm = () => {
     setVariantSku('');
     setVariantTitle('');
     setVariantPrice('');
+    setVariantCost('');
     setVariantImage(null);
   };
 
@@ -136,6 +177,7 @@ export function Products() {
     setVariantSku(variant.sku);
     setVariantTitle(variant.title);
     setVariantPrice(String(variant.price_cents));
+    setVariantCost('');
     setVariantImage(variant.image_url);
     setVariantMode('edit');
   };
@@ -164,6 +206,7 @@ export function Products() {
     if (!selectedProduct) return;
     const price = parseInt(variantPrice, 10);
     if (isNaN(price)) return;
+    const cost = variantCost ? parseInt(variantCost, 10) : null;
 
     if (variantMode === 'edit' && editingVariant) {
       updateVariantMutation.mutate({
@@ -176,7 +219,15 @@ export function Products() {
           image_url: variantImage,
         },
       });
+      if (cost !== null && !isNaN(cost) && cost >= 0) {
+        setVariantCostMutation.mutate({
+          productId: selectedProduct.id,
+          variantId: editingVariant.id,
+          cost_cents: cost,
+        });
+      }
     } else {
+      pendingCost.current = (cost !== null && !isNaN(cost) && cost >= 0) ? cost : null;
       createVariantMutation.mutate({
         productId: selectedProduct.id,
         data: {
@@ -494,6 +545,33 @@ export function Products() {
                     <option value="active">active</option>
                   </select>
                 </div>
+                <div>
+                  <label
+                    className="block text-xs font-medium uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    Default Cost (cents)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={productCostValue}
+                    onChange={(e) => setProductCostValue(e.target.value)}
+                    onBlur={(e) => {
+                      const cost = parseInt(e.target.value, 10);
+                      if (!isNaN(cost) && cost >= 0) {
+                        setProductCostMutation.mutate({ id: selectedProduct.id, cost_cents: cost });
+                      }
+                    }}
+                    placeholder="e.g. 1000"
+                    className="w-full px-3 py-2 font-mono text-sm rounded-lg focus:outline-none focus:ring-2"
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)',
+                    }}
+                  />
+                </div>
               </div>
               <div>
                 <label
@@ -631,6 +709,27 @@ export function Products() {
                     onChange={(e) => setVariantPrice(e.target.value)}
                     placeholder="e.g. 2999"
                     required
+                    min="0"
+                    className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    className="block text-xs font-medium uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    Cost (cents)
+                  </label>
+                  <input
+                    type="number"
+                    value={variantCost}
+                    onChange={(e) => setVariantCost(e.target.value)}
+                    placeholder="e.g. 1000"
                     min="0"
                     className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
                     style={{

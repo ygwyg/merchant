@@ -12,8 +12,9 @@ import {
   Clock,
   RotateCw,
 } from 'lucide-react';
-import { api, Webhook, WebhookDetail } from '../lib/api';
+import { api } from '../lib/api';
 import { Modal } from '../components/Modal';
+import clsx from 'clsx';
 
 const WEBHOOK_EVENTS = [
   { value: 'order.created', label: 'Order Created', description: 'When a new order is placed' },

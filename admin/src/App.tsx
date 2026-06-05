@@ -8,8 +8,9 @@ import { Customers } from './pages/Customers';
 import { Inventory } from './pages/Inventory';
 import { Products } from './pages/Products';
 import { Webhooks } from './pages/Webhooks';
+import { Analytics } from './pages/Analytics';
 
-type Page = 'orders' | 'customers' | 'inventory' | 'products' | 'webhooks';
+type Page = 'orders' | 'customers' | 'inventory' | 'products' | 'webhooks' | 'analytics';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -38,7 +39,7 @@ export default function App() {
     // Handle hash routing
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1) as Page;
-      if (['orders', 'customers', 'inventory', 'products', 'webhooks'].includes(hash)) {
+      if (['orders', 'customers', 'inventory', 'products', 'webhooks', 'analytics'].includes(hash)) {
         setCurrentPage(hash);
       }
     };
@@ -100,6 +101,7 @@ export default function App() {
       {currentPage === 'inventory' && <Inventory />}
       {currentPage === 'products' && <Products />}
       {currentPage === 'webhooks' && <Webhooks />}
+      {currentPage === 'analytics' && <Analytics />}
     </Layout>
   );
 }
